@@ -24,7 +24,7 @@ public final class FaceActivity extends Activity {
     private static final String TAG = "FaceActivity";
     private boolean dimmed;
     private View contentView;
-    private TextView timeView, dateView, timeSuffixView;
+    private TextView timeView, dateView, timeSuffixView, secondsView;
 
     final BroadcastReceiver timeUpdateReceiver = new BroadcastReceiver() {
         @Override
@@ -36,7 +36,7 @@ public final class FaceActivity extends Activity {
     final Runnable tickTockRunnable = new Runnable() {
         @Override
         public void run() {
-            Log.d(TAG, "tick!");
+//            Log.d(TAG, "tick!");
             update();
             if (!dimmed) {
                 handler.removeCallbacks(this);
@@ -56,6 +56,7 @@ public final class FaceActivity extends Activity {
         timeView = (TextView) findViewById(R.id.time);
         timeView.setTypeface(Typeface.createFromAsset(getAssets(), "AndroidClock.ttf"));
         timeSuffixView = (TextView) findViewById(R.id.time_suffix);
+        secondsView = (TextView) findViewById(R.id.seconds);
         dateView = (TextView) findViewById(R.id.date);
         update();
     }
@@ -87,7 +88,7 @@ public final class FaceActivity extends Activity {
         dimmed = true;
         Log.d(TAG, "onPause");
         update();
-//        handler.removeCallbacks(tickTockRunnable);
+        handler.removeCallbacks(tickTockRunnable);
     }
 
     private StringBuilder builder = new StringBuilder();
@@ -111,15 +112,14 @@ public final class FaceActivity extends Activity {
             } else {
                 timeSuffixView.setVisibility(View.GONE);
             }
-//        if (!dimmed) {
-//            builder.append(':');
-//            int seconds = calendar.get(Calendar.SECOND);
-//            if (seconds < 10) {
-//                builder.append('0');
-//            }
-//            builder.append(seconds);
-//        }
-            timeView.setText(builder);
+            if (!dimmed) {
+                int seconds = calendar.get(Calendar.SECOND);
+                secondsView.setText((seconds < 10 ? "0" : "") + seconds);
+            } else {
+                secondsView.setText("");
+            }
+            Log.d(TAG, "set time " + builder.toString() + " minutes " + minutes);
+            timeView.setText(builder.toString());
             dateView.setText(SimpleDateFormat.getDateInstance(DateFormat.FULL).format(time));
         }
     }
