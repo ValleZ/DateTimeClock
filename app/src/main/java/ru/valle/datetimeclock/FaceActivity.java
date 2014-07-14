@@ -121,7 +121,15 @@ public final class FaceActivity extends Activity {
             Calendar calendar = Calendar.getInstance();
             boolean amPm = !is24HourFormat(this);
             builder.setLength(0);
-            builder.append(calendar.get(amPm ? Calendar.HOUR : Calendar.HOUR_OF_DAY));
+            if (amPm) {
+                int hour = calendar.get(Calendar.HOUR);
+                if (hour == 0) {
+                    hour = 12;
+                }
+                builder.append(hour);
+            } else {
+                builder.append(calendar.get(Calendar.HOUR_OF_DAY));
+            }
             builder.append(':');
             int minutes = calendar.get(Calendar.MINUTE);
             if (minutes < 10) {
@@ -140,7 +148,9 @@ public final class FaceActivity extends Activity {
             } else {
                 secondsView.setText("");
             }
-            timeView.setText(builder.toString());
+            String timeStr = builder.toString();
+            Log.d(TAG, "time " + timeStr + " seconds " + calendar.get(Calendar.SECOND) + " millis " + calendar.get(Calendar.MILLISECOND) + " unix " + time);
+            timeView.setText(timeStr);
             dateView.setText(SimpleDateFormat.getDateInstance(DateFormat.FULL).format(time));
             if (isLocationKnown && contentView.getWidth() > 0) {
                 if (Math.abs(time - lastSunPositionCalculatedTime) > 60000) {
