@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -116,11 +117,16 @@ public final class FaceActivity extends Activity {
     private StringBuilder builder = new StringBuilder();
 
     private void update() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Log.e(TAG, "update called from bg thread", new Exception());
+            return;
+        }
         if (contentView != null) {
             long time = System.currentTimeMillis();
             Calendar calendar = Calendar.getInstance();
             boolean amPm = !is24HourFormat(this);
             builder.setLength(0);
+            int minutes = calendar.get(Calendar.MINUTE);
             if (amPm) {
                 int hour = calendar.get(Calendar.HOUR);
                 if (hour == 0) {
@@ -131,10 +137,11 @@ public final class FaceActivity extends Activity {
                 builder.append(calendar.get(Calendar.HOUR_OF_DAY));
             }
             builder.append(':');
-            int minutes = calendar.get(Calendar.MINUTE);
+
             if (minutes < 10) {
                 builder.append('0');
             }
+
             builder.append(minutes);
             if (amPm) {
                 timeSuffixView.setVisibility(View.VISIBLE);
