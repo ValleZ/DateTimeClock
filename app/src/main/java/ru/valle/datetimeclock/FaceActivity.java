@@ -5,14 +5,19 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -25,18 +30,13 @@ public final class FaceActivity extends Activity {
 
     private static final String TAG = "FaceActivity";
     private boolean dimmed;
-    private View contentView;
-    private View sunView;
-    private TextView timeView, dateView, timeSuffixView, secondsView;
+    private SurfaceView surfaceView;
 
     final BroadcastReceiver timeUpdateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             Log.d(TAG, "onReceive " + intent);
             update();
-            if (Intent.ACTION_TIMEZONE_CHANGED.equals(intent.getAction())) {
-                locationUpdate();
-            }
         }
     };
     final Runnable tickTockRunnable = new Runnable() {
@@ -56,32 +56,61 @@ public final class FaceActivity extends Activity {
     private double latitude = 37.37;
     private double longitude = -122;
     private long lastSunPositionCalculatedTime;
+    private final View.OnLayoutChangeListener layoutListener = new View.OnLayoutChangeListener() {
+        @Override
+        public void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+            update();
+        }
+    };
+    private SurfaceHolder surfaceHolder;
+    private final Paint timePaint = new Paint();
+    private final Paint amPmPaint = new Paint();
+    private final Paint secondsPaint = new Paint();
+    private final Paint datePaint = new Paint();
+    private final Paint sunPaint = new Paint();
+    private final Rect boundsRect = new Rect();
+    private float pmWidth;
+    private float timeGapSize, dateGapSize;
+    private Bitmap sunBitmap;
+    private double sunPosition;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "onCreate");
-        setContentView(R.layout.common_face);
+        setContentView(R.layout.surfaced_face);
         handler = new Handler();
-        contentView = findViewById(R.id.content);
-        timeView = (TextView) findViewById(R.id.time);
-        timeView.setTypeface(Typeface.createFromAsset(getAssets(), "AndroidClock.ttf"));
-        timeSuffixView = (TextView) findViewById(R.id.time_suffix);
-        secondsView = (TextView) findViewById(R.id.seconds);
-        dateView = (TextView) findViewById(R.id.date);
-        sunView = findViewById(R.id.sun);
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                locationUpdate();
-            }
-        }, 24 * 3600 * 1000L);
-        locationUpdate();
-        update();
+        surfaceView = (SurfaceView) findViewById(R.id.content);
+        surfaceView.addOnLayoutChangeListener(layoutListener);
+        surfaceHolder = surfaceView.getHolder();
+        Typeface clockTypeface = Typeface.createFromAsset(getAssets(), "AndroidClock.ttf");
+        timePaint.setTypeface(clockTypeface);
+        timePaint.setColor(getResources().getColor(R.color.white));
+        timePaint.setTextSize(dp2px(50));
+        timePaint.setAntiAlias(true);
+        amPmPaint.setColor(getResources().getColor(R.color.light_gray));
+        amPmPaint.setTextSize(dp2px(18));
+        amPmPaint.setAntiAlias(true);
+        secondsPaint.setColor(getResources().getColor(R.color.white));
+        secondsPaint.setTextSize(dp2px(18));
+        secondsPaint.setAntiAlias(true);
+        datePaint.setColor(getResources().getColor(R.color.white));
+        datePaint.setTextSize(dp2px(16));
+        datePaint.setAntiAlias(true);
+        sunPaint.setAntiAlias(true);
+        pmWidth = amPmPaint.measureText("PM");
+        timeGapSize = dp2px(8);
+        dateGapSize = dp2px(16);
+        GradientDrawable sunShape = (GradientDrawable) getResources().getDrawable(R.drawable.sun);
+        int sunSize = dp2px(8);
+        sunShape.setBounds(0, 0, sunSize, sunSize);
+        sunBitmap = Bitmap.createBitmap(sunSize, sunSize, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(sunBitmap);
+        sunShape.draw(canvas);
     }
 
-    private void locationUpdate() {
-
+    private int dp2px(int dp) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
     @Override
@@ -117,71 +146,75 @@ public final class FaceActivity extends Activity {
     private StringBuilder builder = new StringBuilder();
 
     private void update() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Log.e(TAG, "update called from bg thread", new Exception());
-            return;
+        if (surfaceHolder != null && surfaceHolder.getSurface().isValid()) {
+            Canvas canvas = surfaceHolder.lockCanvas();
+            if (canvas != null) {
+                draw(canvas);
+                surfaceHolder.unlockCanvasAndPost(canvas);
+            }
         }
-        if (contentView != null) {
-            long time = System.currentTimeMillis();
-            Calendar calendar = Calendar.getInstance();
-            boolean amPm = !is24HourFormat(this);
-            builder.setLength(0);
-            int minutes = calendar.get(Calendar.MINUTE);
-            if (amPm) {
-                int hour = calendar.get(Calendar.HOUR);
-                if (hour == 0) {
-                    hour = 12;
-                }
-                builder.append(hour);
-            } else {
-                builder.append(calendar.get(Calendar.HOUR_OF_DAY));
-            }
-            builder.append(':');
+    }
 
-            if (minutes < 10) {
-                builder.append('0');
+    private void draw(Canvas canvas) {
+        canvas.drawColor(0xFF000000);
+        long time = System.currentTimeMillis();
+        Calendar calendar = Calendar.getInstance();
+        boolean amPm = !is24HourFormat(this);
+        builder.setLength(0);
+        int minutes = calendar.get(Calendar.MINUTE);
+        if (amPm) {
+            int hour = calendar.get(Calendar.HOUR);
+            if (hour == 0) {
+                hour = 12;
             }
+            builder.append(hour);
+        } else {
+            builder.append(calendar.get(Calendar.HOUR_OF_DAY));
+        }
+        builder.append(':');
 
-            builder.append(minutes);
-            if (amPm) {
-                timeSuffixView.setVisibility(View.VISIBLE);
-                timeSuffixView.setText(calendar.get(Calendar.AM_PM) == Calendar.AM ? "AM" : "PM");
-            } else {
-                timeSuffixView.setVisibility(View.GONE);
-            }
-            if (!dimmed) {
-                int seconds = calendar.get(Calendar.SECOND);
-                secondsView.setText((seconds < 10 ? "0" : "") + seconds);
-            } else {
-                secondsView.setText("");
-            }
-            String timeStr = builder.toString();
-            Log.d(TAG, "time " + timeStr + " seconds " + calendar.get(Calendar.SECOND) + " millis " + calendar.get(Calendar.MILLISECOND) + " unix " + time);
-            timeView.setText(timeStr);
-            dateView.setText(SimpleDateFormat.getDateInstance(DateFormat.FULL).format(time));
-            if (isLocationKnown && contentView.getWidth() > 0) {
-                if (Math.abs(time - lastSunPositionCalculatedTime) > 60000) {
-                    lastSunPositionCalculatedTime = time;
-                    double sunPosition = calcSunset(latitude, longitude);
-                    if (sunPosition < 0) {
-                        Log.d(TAG, "sun position " + sunPosition + " night");
-                        sunView.setVisibility(View.INVISIBLE);
-                    } else {
-                        sunView.setVisibility(View.VISIBLE);
-                        if (sunPosition > 1) {
-                            sunPosition = 0.5;//arctic day
-                        }
-                        LinearLayout.LayoutParams lp = ((LinearLayout.LayoutParams) sunView.getLayoutParams());
-                        int marginLeft = (int) (contentView.getWidth() * sunPosition - sunView.getWidth() / 2);
-                        Log.d(TAG, "sun position " + sunPosition + " day offs " + marginLeft + " of " + contentView.getWidth() + " old " + lp.getMarginStart());
-                        lp.setMargins(marginLeft, 0, 0, 0);
-                        sunView.setLayoutParams(lp);
+        if (minutes < 10) {
+            builder.append('0');
+        }
+        builder.append(minutes);
+        String timeStr = builder.toString();
+        timePaint.getTextBounds(timeStr, 0, timeStr.length(), boundsRect);
+
+        float timeWidth = boundsRect.width();
+        float timeHeight = boundsRect.height();
+        float timeTop = dp2px(18);
+        float timeBaseline = timeTop + timeHeight;
+        float secondsX = canvas.getWidth() - pmWidth - dp2px(4);
+        float timeStart = secondsX - timeWidth - timeGapSize;
+        canvas.drawText(timeStr, timeStart, timeBaseline, timePaint);
+        if (amPm) {
+            String amPmStr = calendar.get(Calendar.AM_PM) == Calendar.AM ? "AM" : "PM";
+            canvas.drawText(amPmStr, secondsX, timeBaseline, amPmPaint);
+        }
+        if (!dimmed) {
+            int seconds = calendar.get(Calendar.SECOND);
+            String secondsStr = (seconds < 10 ? "0" : "") + seconds;
+            float secondsWidth = secondsPaint.measureText(secondsStr);
+            canvas.drawText(secondsStr, secondsX + (pmWidth - secondsWidth) / 2, timeTop + secondsPaint.getTextSize() - secondsPaint.descent(), secondsPaint);
+        }
+        String dateStr = SimpleDateFormat.getDateInstance(DateFormat.FULL).format(time);
+        float dateWidth = datePaint.measureText(dateStr);
+        canvas.drawText(dateStr, (canvas.getWidth() - dateWidth) / 2, timeBaseline + datePaint.getTextSize() + dateGapSize, datePaint);
+
+        if (isLocationKnown && canvas.getWidth() > 0) {
+            if (Math.abs(time - lastSunPositionCalculatedTime) > 60000) {
+                lastSunPositionCalculatedTime = time;
+                sunPosition = calcSunset(latitude, longitude);
+                if (sunPosition >= 0) {
+                    if (sunPosition > 1) {
+                        sunPosition = 0.5;//arctic day
                     }
                 }
-            } else {
-                sunView.setVisibility(View.INVISIBLE);
             }
+            canvas.drawBitmap(sunBitmap, (float) (canvas.getWidth() * sunPosition - sunBitmap.getWidth()),
+                    timeBaseline + (dateGapSize - sunBitmap.getHeight()), sunPaint);
         }
+
     }
 
     private static double calcSunset(double latitude, double longitude) {
